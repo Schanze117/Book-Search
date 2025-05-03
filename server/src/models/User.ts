@@ -1,68 +1,51 @@
-import { Schema, model, type Document } from 'mongoose';
+import {Schema, model, type Document} from 'mongoose';
 import bcrypt from 'bcrypt';
 
-// import schema from Book.js
-import bookSchema from './Book.js';
-import type { BookDocument } from './Book.js';
+// Import the Book schema from the Books.js file
+import {BookSchema} from './Books.js';
+import type {Book} from './Books.js';
 
-export interface UserDocument extends Document {
-  id: string;
+export interface user extends Document {
   username: string;
   email: string;
+  id: string;
   password: string;
-  savedBooks: BookDocument[];
-  isCorrectPassword(password: string): Promise<boolean>;
-  bookCount: number;
+  savedBooks: Book[]; // Use the Book interface for savedBooks
+    bookCount: number; // Add bookCount property
+    comparePassword: (password: string) => Promise<boolean>; // Add comparePassword method
 }
 
-const userSchema = new Schema<UserDocument>(
-  {
-    username: {
-      type: String,
-      required: true,
-      unique: true,
-    },
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      match: [/.+@.+\..+/, 'Must use a valid email address'],
-    },
-    password: {
-      type: String,
-      required: true,
-    },
-    // set savedBooks to be an array of data that adheres to the bookSchema
-    savedBooks: [bookSchema],
-  },
-  // set this to use virtual below
-  {
-    toJSON: {
-      virtuals: true,
-    },
+const UserSchema = new Schema<user>({
+  username: {type: String, required: true, unique: true },
+  email: {type: String, required: true, unique: true},
+    password: {type: String, required: true},
+    savedBooks: [BookSchema], // Use the Book schema for savedBooks
+    bookCount: {type: Number, default: 0}, // Add bookCount property
+});
+
+// Hash the password before saving the user
+UserSchema.pre<user>('save', async function (this: user, next) {
+  if (!this.isModified('password')) {
+    return next();
   }
+  try {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+  } catch (error) {
+    next(error as Error);
+  }
+}
 );
 
-// hash user password
-userSchema.pre('save', async function (next) {
-  if (this.isNew || this.isModified('password')) {
-    const saltRounds = 10;
-    this.password = await bcrypt.hash(this.password, saltRounds);
-  }
-
-  next();
-});
-
-// custom method to compare and validate password for logging in
-userSchema.methods.isCorrectPassword = async function (password: string) {
+// Compare the provided password with the hashed password
+UserSchema.methods.comparePassword = async function (this: user, password: string): Promise<boolean> {
   return await bcrypt.compare(password, this.password);
-};
+}
 
-// when we query a user, we'll also get another field called `bookCount` with the number of saved books we have
-userSchema.virtual('bookCount').get(function () {
-  return this.savedBooks.length;
+UserSchema.virtual('bookCount').get(function (this: user) {
+  return this.savedBooks.length; // Return the length of the savedBooks array
 });
 
-const User = model<UserDocument>('User', userSchema);
-
+const User = model<user>('User', UserSchema);
 export default User;
